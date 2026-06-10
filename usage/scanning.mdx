@@ -1,0 +1,105 @@
+---
+title: "Wi-Fi Scanning Flow and Controls in Spectrum"
+sidebarTitle: "Scanning"
+description: "Learn how Spectrum 2.4 GHz triggers Wi-Fi scans, enforces cooldowns, handles timeouts, and auto-updates the Time Graph tab every 5 seconds."
+---
+
+Spectrum 2.4 GHz uses Android's `WifiManager` API to discover nearby 2.4 GHz networks. Every scan follows a strict lifecycle — from permission checks through result filtering — to ensure the app never overwhelms the system while still delivering up-to-date signal data. Understanding this flow helps you get the most accurate readings and troubleshoot situations where results look stale.
+
+## Scan Lifecycle
+
+<Steps>
+  <Step title="Tap Escanear">
+    Pressing the **Escanear** button calls `requestPermissionsAndScan()`. The app checks whether `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, and (on Android 13+) `NEARBY_WIFI_DEVICES` permissions are already granted.
+
+    - If all permissions are present, `startScanFlow()` is called immediately.
+    - If any permission is missing, the system permission dialog is shown. After the user responds, `startScanFlow()` is called on success or a rationale dialog is shown on denial.
+  </Step>
+
+  <Step title="Cooldown check (30 s)">
+    `startScanFlow()` compares the current elapsed time against `lastScanStartMs`. If fewer than **30,000 ms (30 seconds)** have passed since the last scan started, the app skips the new scan and calls `loadCachedResults()` instead, displaying the most recent `WifiManager.getScanResults()` data.
+
+    The status bar immediately reflects this with a `· caché` suffix (see [Status bar format](#status-bar-text-format) below).
+  </Step>
+
+  <Step title="Wi-Fi availability check">
+    If the cooldown has elapsed, `startScanFlow()` verifies that either `wifiManager.isWifiEnabled()` or `wifiManager.isScanAlwaysAvailable()` returns `true`. If neither is true, a dialog prompts the user to open **Wi-Fi Settings** or **Location Settings** before proceeding.
+  </Step>
+
+  <Step title="Initiate scan — initiateWifiScan()">
+    `initiateWifiScan()` records the current timestamp in `lastScanStartMs`, sets the UI to scanning state, clears any previous results, registers a `BroadcastReceiver` for `SCAN_RESULTS_AVAILABLE_ACTION`, and calls `wifiManager.startScan()`.
+
+    A **12-second timeout** (`SCAN_TIMEOUT_MS = 12_000L`) is simultaneously posted. If the `BroadcastReceiver` has not fired by then, `handleScanResults(false)` is called automatically as a fallback.
+  </Step>
+
+  <Step title="Receive results — BroadcastReceiver">
+    When Android delivers the `SCAN_RESULTS_AVAILABLE_ACTION` broadcast, `handleScanResults(fresh)` is called with the `EXTRA_RESULTS_UPDATED` boolean. A value of `false` means the OS returned cached results.
+  </Step>
+
+  <Step title="Filter and populate">
+    `populateNetworks()` iterates `wifiManager.getScanResults()` and **discards any result whose frequency falls outside 2410–2486 MHz** (`FREQ_MIN` / `FREQ_MAX`). This window covers channels 1–14 with a ±2 MHz margin for non-standard chipsets. Accepted results are wrapped into `ScannedNetwork` objects and sorted by RSSI descending.
+  </Step>
+
+  <Step title="Push to history and refresh UI">
+    The new network list is appended to `scanHistory` (capped at 20 entries). All adapters are notified, the Time Graph view is updated, and if the Statistics tab is currently visible it is refreshed. The scanning state is cleared and the status bar is updated.
+  </Step>
+</Steps>
+
+## Scanning State UI
+
+While a scan is in progress the interface changes to prevent duplicate scans:
+
+- The **progress bar** becomes visible.
+- The **Escanear** button is disabled and its label changes to **"Escaneando…"**.
+- Both states are restored by `setScanningState(false)` once `handleScanResults` completes.
+
+## Status Bar Text Format
+
+After every scan (or cache load), the status bar displays a single line built from this template:
+
+```
+Escaneo: HH:mm:ss · N redes
+```
+
+| Segment | Value |
+|---|---|
+| `HH:mm:ss` | Wall-clock time of result delivery (24-hour format) |
+| `N redes` | Total accepted network count; `"sin redes detectadas"` when zero |
+| `· caché` | Appended when `fresh == false` (OS returned stale results or timeout fired) |
+
+**Example:** `Escaneo: 14:32:07  ·  8 redes · caché`
+
+## Auto-Scan on the Time Graph Tab
+
+When the **Tiempo** tab (index 2) is active, a `Handler` fires every **5,000 ms** and calls `initiateWifiScan()` directly — bypassing the 30-second cooldown check. This keeps the time-series graph continuously updated without requiring manual interaction.
+
+```java
+private final Runnable autoUpdateTask = new Runnable() {
+    @Override
+    public void run() {
+        if (currentTab == 2) {
+            initiateWifiScan();
+        }
+        autoUpdateHandler.postDelayed(this, 5000L);
+    }
+};
+```
+
+The handler is started in `onCreate()` and cancelled in `onDestroy()`, so it only runs while the activity is alive.
+
+## Frequency Filter Constants
+
+```java
+private static final int FREQ_MIN = 2410; // MHz
+private static final int FREQ_MAX = 2486; // MHz
+```
+
+Results outside this range — including 5 GHz, 6 GHz, and any 2.4 GHz outliers — are silently discarded during `populateNetworks()`.
+
+<Note>
+  The **30-second cooldown** means tapping **Escanear** rapidly will serve cached results on every tap after the first. The `· caché` suffix in the status bar is your indicator that no new radio scan occurred. Wait 30 seconds from the last scan timestamp before expecting a fresh radio sweep.
+</Note>
+
+<Tip>
+  If the app shows a "Wi-Fi desactivado" dialog, you have two options without turning on Wi-Fi fully: navigate to **Settings → Location → Advanced → Wi-Fi scanning** and enable **"Scan Always Available"**. This lets Spectrum (and Android location services) perform background scans even when the Wi-Fi toggle is off.
+</Tip>

@@ -1,0 +1,155 @@
+---
+title: "Contributing to the Spectrum 2.4GHz Android Project"
+sidebarTitle: "Contributing"
+description: "Learn how to fork, branch, and contribute Java code to Spectrum 2.4GHz while following the project's architecture and code-style conventions."
+---
+
+Spectrum 2.4GHz is an open-source Android application, and contributions of all kinds are welcome — whether you are fixing a bug, improving the scan visualisation, or adding support for a new security protocol. This guide explains how to set up a development environment, the conventions the codebase follows, and the patterns you should use when extending specific parts of the app.
+
+<Note>
+  Contributions, bug reports, and feature requests are welcome via **GitHub Issues** at [github.com/anfegomezver/spectrum24ghz](https://github.com/anfegomezver/spectrum24ghz). If you are reporting a bug, include your Android version, device model, and a description of the observed vs. expected behaviour.
+</Note>
+
+## Getting Started
+
+<Steps>
+  <Step title="Fork and clone the repository">
+    Fork the project on GitHub, then clone your fork locally:
+
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/spectrum24ghz.git
+    cd spectrum24ghz
+    ```
+  </Step>
+
+  <Step title="Create a feature branch">
+    Always work on a dedicated branch — never commit directly to `main`:
+
+    ```bash
+    git checkout -b feature/my-improvement
+    ```
+
+    Use descriptive branch names such as `fix/scan-timeout-edge-case` or `feature/channel-14-support`.
+  </Step>
+
+  <Step title="Make your changes">
+    Open the project in Android Studio, implement your changes, and verify that the app builds and runs correctly on a physical device or emulator. See the build requirements below.
+  </Step>
+
+  <Step title="Open a pull request">
+    Push your branch to your fork and open a pull request against the upstream `main` branch. Describe what you changed and why. Link any related GitHub Issue in the PR description.
+  </Step>
+</Steps>
+
+## Build Requirements
+
+| Requirement | Details |
+|---|---|
+| **IDE** | Android Studio (latest stable) |
+| **Android SDK** | API 34 (Android 14) installed via SDK Manager |
+| **Java version** | Java 8 (`JavaVersion.VERSION_1_8`) |
+| **Min device** | Android 6.0 (API 23) physical or virtual device |
+
+## Language: Java, Not Kotlin
+
+The entire codebase is written in **Java**. Do not introduce Kotlin source files. Maintaining a single language throughout avoids mixed-language build complexity and keeps the contribution barrier low. If you migrate any class to Kotlin you will need to configure the Kotlin Gradle plugin — that change is outside the scope of a typical feature contribution.
+
+## Code Style Guidance
+
+### Single-Activity architecture
+
+The app uses one `Activity` (`MainActivity`) with no Fragments. **Do not add Fragments** unless there is a compelling reason that cannot be addressed by adding a new custom view or updating `selectTab(int)`. The simplicity of the current structure is intentional: it keeps all scan state in one place and avoids Fragment back-stack complexity.
+
+### Scan logic stays in MainActivity
+
+All Wi-Fi scanning logic — permission checking, the `BroadcastReceiver`, the 30-second cooldown, the 12-second timeout, and the call to `wifiManager.startScan()` — lives in `MainActivity`. Do not move this logic into a Repository, ViewModel, or background Service without discussing the change in an Issue first, as it touches Android permission and lifecycle contracts that are currently handled at the Activity level.
+
+### Custom views are self-contained Canvas implementations
+
+`TimeGraphView` and `StatisticsGraphView` both extend `android.view.View` directly and render everything in `onDraw(Canvas)`. Keep this pattern: custom views should accept data via a single public `update*()` method, store it internally, and call `invalidate()`. Do not pass `Context`-dependent resources (colour lookups, dimension lookups) through the update method — resolve them in `init()` or `onAttachedToWindow()` instead.
+
+### Model classes use constructor-only initialisation
+
+`ScannedNetwork` is fully immutable — all seven fields are `final` and set through the constructor:
+
+```java
+public ScannedNetwork(String ssid, String bssid, int rssi, int signalPercent,
+                      int frequency, int channel, String capabilities)
+```
+
+If you need to add a new field to `ScannedNetwork`, add it to the constructor signature and update every call site in `MainActivity.populateNetworks()`. Do **not** add setters.
+
+`WifiChannel` follows the same rule with one intentional exception: `setExpanded(boolean)` is a mutable UI-state field used by adapters to track expand/collapse state. New fields that represent channel metadata (not transient UI state) should be added via the constructor.
+
+### RecyclerView adapters use the ViewHolder + View Binding pattern
+
+Both `NetworkAdapter` and `ChannelListAdapter` follow this pattern:
+
+```java
+class MyViewHolder extends RecyclerView.ViewHolder {
+    private final ItemMyBinding binding;
+
+    MyViewHolder(ItemMyBinding binding) {
+        super(binding.getRoot());
+        this.binding = binding;
+    }
+
+    void bind(MyModel item) { /* ... */ }
+}
+```
+
+Do not use `itemView.findViewById()` — always use the generated View Binding class for the item layout.
+
+## Adding a New Tab View
+
+If you want to add a fifth visualisation tab, follow these steps:
+
+1. **Add a tab button** to `activity_main.xml` following the same structure as the existing `tabList`, `tabChannels`, `tabTime`, and `tabStats` views.
+2. **Register a click listener** in `MainActivity.onCreate()`:
+   ```java
+   binding.tabMyView.setOnClickListener(v -> selectTab(4));
+   ```
+3. **Handle the new index** inside `selectTab(int tabIndex)`: set visibility for the new view and update the selected/unselected text colours.
+4. **Create a new custom View class** (e.g., `MyCustomView.java`) that extends `android.view.View` and implements `onDraw(Canvas)` if the tab requires canvas rendering. For simple list-based tabs, a `RecyclerView` with a new adapter is sufficient.
+
+## Extending Security Protocol Support
+
+The `getSecurityLabel()` method in `ScannedNetwork` parses the `capabilities` string returned by `WifiManager.getScanResults()` to derive a human-readable label:
+
+```java
+public String getSecurityLabel() {
+    if (capabilities == null || capabilities.isEmpty()) return "Open";
+
+    String capsUpper = capabilities.toUpperCase();
+
+    if (capsUpper.contains("WPA3")) {
+        if (capsUpper.contains("EAP")) return "WPA3-Ent (Enterprise)";
+        return "WPA3-SAE (Personal)";
+    }
+    if (capsUpper.contains("WPA2")) { /* ... */ }
+    if (capsUpper.contains("WPA"))  { /* ... */ }
+    if (capsUpper.contains("WEP"))  { return "WEP (Legacy)"; }
+    if (capsUpper.contains("OWE"))  { return "Enhanced Open (OWE)"; }
+
+    return "Open (No Security)";
+}
+```
+
+To add support for a new protocol (for example, WPA3-192-bit Enterprise), add a new `contains()` branch **before** the generic `WPA3` check, since keyword matching is evaluated top-to-bottom. After updating `getSecurityLabel()`, verify that the new label appears correctly in the Statistics tab's Security Types chart and in the network detail dialog.
+
+## Running Tests
+
+The project includes two test classes that should continue to pass after any change:
+
+- **`ExampleUnitTest`** — a JVM unit test (no device required). Run it with:
+  ```bash
+  ./gradlew test
+  ```
+- **`ExampleInstrumentedTest`** — an instrumented test using `androidx.test.ext.junit` that runs on a real device or emulator. Run it with:
+  ```bash
+  ./gradlew connectedAndroidTest
+  ```
+
+<Tip>
+  Run instrumented tests on a physical device when possible. The Wi-Fi scanning APIs behave differently on emulators: `wifiManager.startScan()` may return `false` immediately, causing the app to fall back to cached (empty) results. Any test that exercises the scan flow is best validated on real hardware.
+</Tip>

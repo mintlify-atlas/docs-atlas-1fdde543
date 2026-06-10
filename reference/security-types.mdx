@@ -1,0 +1,107 @@
+---
+title: "Wi-Fi Network Security Types Detected by Spectrum"
+sidebarTitle: "Security Types"
+description: "Reference for all Wi-Fi security labels Spectrum 2.4GHz can identify, how each is detected from the capabilities string, and their relative security levels."
+---
+
+Every Wi-Fi network advertises its supported authentication and encryption methods through a capabilities string that Android's `WifiManager` includes in each `ScanResult`. Spectrum 2.4GHz parses this string in `ScannedNetwork.getSecurityLabel()` and reduces it to a concise, user-friendly label — from the most secure WPA3 protocols down to completely open networks — so you can immediately assess the security posture of everything visible in your environment.
+
+## How Detection Works
+
+When a scan result is processed, the raw `capabilities` string (e.g., `[WPA2-PSK-CCMP][RSN][ESS]`) is converted to **upper case** and then tested against a priority-ordered series of substring checks. The first matching condition wins, which prevents ambiguous overlap between WPA, WPA2, and WPA3 tokens that can coexist in the same capabilities string on transition-mode networks.
+
+Detection priority (highest to lowest):
+
+1. **WPA3** — checked before WPA2 to correctly classify WPA2/WPA3 transition networks as WPA3.
+2. **WPA2** — checked before WPA to avoid misclassifying WPA2 as plain WPA.
+3. **WPA** — matched only after WPA2 and WPA3 are ruled out.
+4. **WEP** — legacy encryption, lowest keyed security.
+5. **OWE** — Opportunistic Wireless Encryption (Enhanced Open).
+6. **Open** — fallback when none of the above match, or when the capabilities string is empty or null.
+
+## Security Labels
+
+| Label | Detection Condition | Security Level |
+|-------|---------------------|----------------|
+| **WPA3-SAE (Personal)** | `capabilities` contains `"WPA3"` but not `"EAP"` | Highest |
+| **WPA3-Ent (Enterprise)** | `capabilities` contains both `"WPA3"` and `"EAP"` | Highest |
+| **WPA2-PSK (Personal)** | `capabilities` contains `"WPA2"` and `"PSK"` | High |
+| **WPA2-EAP (Enterprise)** | `capabilities` contains `"WPA2"` and `"EAP"` | High |
+| **WPA2** | `capabilities` contains `"WPA2"` only (no PSK/EAP) | High |
+| **WPA-PSK (Personal)** | `capabilities` contains `"WPA"` and `"PSK"` (no WPA2/3) | Medium |
+| **WPA-EAP (Enterprise)** | `capabilities` contains `"WPA"` and `"EAP"` (no WPA2/3) | Medium |
+| **WPA** | `capabilities` contains `"WPA"` only (no WPA2/3, PSK, or EAP) | Medium |
+| **WEP (Legacy)** | `capabilities` contains `"WEP"` | Low |
+| **Enhanced Open (OWE)** | `capabilities` contains `"OWE"` | Medium (no password, but encrypted) |
+| **Open (No Security)** | None of the above match, or string is null/empty | None |
+
+<Warning>
+  Detection is **case-insensitive** — `getSecurityLabel()` calls `capabilities.toUpperCase()` before any comparison. This means capability tokens like `[wpa2-psk-ccmp]` and `[WPA2-PSK-CCMP]` are treated identically.
+</Warning>
+
+## Source Code Reference
+
+The complete `getSecurityLabel()` method from `ScannedNetwork.java`:
+
+```java
+public String getSecurityLabel() {
+    if (capabilities == null || capabilities.isEmpty()) {
+        return "Open";
+    }
+
+    String capsUpper = capabilities.toUpperCase();
+
+    if (capsUpper.contains("WPA3")) {
+        if (capsUpper.contains("EAP")) return "WPA3-Ent (Enterprise)";
+        return "WPA3-SAE (Personal)";
+    }
+
+    if (capsUpper.contains("WPA2")) {
+        if (capsUpper.contains("EAP")) return "WPA2-EAP (Enterprise)";
+        if (capsUpper.contains("PSK")) return "WPA2-PSK (Personal)";
+        return "WPA2";
+    }
+
+    if (capsUpper.contains("WPA")) {
+        if (capsUpper.contains("EAP")) return "WPA-EAP (Enterprise)";
+        if (capsUpper.contains("PSK")) return "WPA-PSK (Personal)";
+        return "WPA";
+    }
+
+    if (capsUpper.contains("WEP")) {
+        return "WEP (Legacy)";
+    }
+
+    if (capsUpper.contains("OWE")) {
+        return "Enhanced Open (OWE)";
+    }
+
+    return "Open (No Security)";
+}
+```
+
+## Color Coding in the App
+
+The security label returned by `getSecurityLabel()` is used in `NetworkAdapter.bind()` to control the color of the lock icon displayed on each network row:
+
+| Network State | Lock Icon | Color |
+|---------------|-----------|-------|
+| Open / Open (No Security) / Enhanced Open | `ic_lock_open` | Red (`sig_weak`) |
+| Any secured network (WEP, WPA, WPA2, WPA3) | `ic_lock` | Secondary text color (`text_secondary`) |
+
+WPA3 networks do not receive a distinct green highlight in the lock icon itself, but WPA3 is displayed in the subtitle info line alongside the channel and frequency, making the protocol immediately visible in the network list.
+
+## Security Recommendations
+
+<Warning>
+  **Open (No Security)** and **WEP (Legacy)** networks transmit data without meaningful confidentiality protection. Avoid connecting to open networks for any sensitive activity, and treat WEP-protected networks as effectively open — WEP's RC4-based encryption was cryptographically broken and can be cracked in minutes with freely available tools.
+</Warning>
+
+| Protocol | Recommendation |
+|----------|---------------|
+| **WPA3-SAE / WPA3-Ent** | Preferred. Use whenever your router and client devices support it. SAE (Simultaneous Authentication of Equals) eliminates offline dictionary attacks. |
+| **WPA2-PSK / WPA2-EAP** | Acceptable. WPA2 with a strong, unique passphrase (≥ 16 characters) is secure in practice for most home and small office deployments. |
+| **WPA / WPA-PSK** | Tolerable but outdated. WPA (TKIP) has known weaknesses; upgrade the router firmware or replace hardware if possible. |
+| **WEP (Legacy)** | Avoid. Cryptographically broken since 2001. Replace immediately. |
+| **Enhanced Open (OWE)** | Better than no security — traffic is encrypted in transit even without a password — but provides no authentication; man-in-the-middle attacks are still possible. |
+| **Open (No Security)** | Avoid for any sensitive traffic. Use only for captive-portal guest networks under controlled conditions. |

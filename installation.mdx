@@ -1,0 +1,107 @@
+---
+title: "Installing Spectrum 2.4GHz on Your Android Device"
+sidebarTitle: "Installation"
+description: "Install Spectrum 2.4GHz by downloading the prebuilt APK from GitHub Releases or by building the project from source in Android Studio."
+---
+
+Spectrum 2.4GHz can be installed in two ways: end users can grab the prebuilt APK directly from the GitHub Releases page, while developers who want to modify or debug the app can clone the repository and build it from source using Android Studio. Both paths are covered below, along with the system requirements that apply to either method.
+
+## System Requirements
+
+Before installing, confirm that your device or development environment meets the following requirements:
+
+| Requirement | Detail |
+|---|---|
+| Android version | Android 6.0 Marshmallow or newer |
+| Minimum SDK | API Level 23 |
+| Target SDK | API Level 34 (Android 14) |
+| Compile SDK | API Level 34 |
+| Java version (build only) | Java 8 (`VERSION_1_8`) |
+| Android Studio (build only) | Hedgehog (2023.1.1) or newer recommended |
+
+## Installation Methods
+
+<Tabs>
+  <Tab title="Download APK">
+    Downloading the prebuilt APK is the fastest way to get Spectrum 2.4GHz running. No development tools are required.
+
+    <Warning>
+      Installing an APK from outside the Google Play Store is called **sideloading**. Android blocks this by default to protect users. You must explicitly grant permission to install unknown apps — this is typically a one-time setting scoped to the browser or file manager you use to open the APK. Enabling this setting only for the specific installer app (rather than system-wide) is recommended for security.
+    </Warning>
+
+    <Steps>
+      <Step title="Open the GitHub Releases page">
+        Navigate to the Spectrum 2.4GHz v1.0.0 release on your Android device or desktop browser:
+
+        ```
+        https://github.com/anfegomezver/spectrum24ghz/releases/tag/v1.0.0
+        ```
+
+        You can also find the link in the repository's **Releases** panel on the right-hand sidebar of the GitHub repo page.
+      </Step>
+      <Step title="Download the APK file">
+        Scroll to the **Assets** section at the bottom of the release notes. Tap or click the file ending in `.apk` (for example, `app-debug.apk` or `Spectrum24GHz_v1.0.0.apk`) to begin the download.
+
+        If you are downloading on a desktop, transfer the `.apk` file to your Android device via USB, Google Drive, or any file-sharing method you prefer.
+      </Step>
+      <Step title="Enable installation from Unknown Sources">
+        When you open the downloaded APK, Android will prompt you with a security warning. The exact wording varies by Android version:
+
+        - **Android 8.0+:** Tap **Settings** in the prompt, then toggle **Allow from this source** for the app you used to open the file (e.g., Chrome, Files).
+        - **Android 6–7:** Go to **Settings → Security → Unknown sources** and enable it.
+
+        Once enabled, press the **Back** button to return to the installer.
+      </Step>
+      <Step title="Complete the installation">
+        Tap **Install** on the Android installer screen and wait for the installation to finish. Tap **Open** to launch Spectrum 2.4GHz immediately, or **Done** to find it in your app drawer later.
+
+        On first launch the app will request location permissions required for Wi-Fi scanning — see the [Permissions](permissions) page for details.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Build from Source">
+    Building from source lets you inspect, modify, and debug the full application. You will need Android Studio and a working Java 8+ SDK installed on your development machine.
+
+    <Steps>
+      <Step title="Clone the repository">
+        Open a terminal and clone the repository to your local machine:
+
+        ```bash
+        git clone https://github.com/anfegomezver/spectrum24ghz.git
+        ```
+
+        This creates a `spectrum24ghz/` directory containing the full Android project.
+      </Step>
+      <Step title="Open the project in Android Studio">
+        Launch Android Studio and select **File → Open** (or **Open** from the Welcome screen). Navigate to and select the `spectrum24ghz/` folder you just cloned, then click **OK**.
+
+        Android Studio will recognise the project as a Gradle-based Android application and begin importing it.
+      </Step>
+      <Step title="Sync Gradle and resolve dependencies">
+        Android Studio will automatically prompt you to sync the Gradle files. If it does not, click the **Sync Project with Gradle Files** button in the toolbar (the elephant icon with an arrow).
+
+        The project depends on the following libraries, which Gradle will download automatically:
+
+        ```groovy
+        implementation 'androidx.core:core:1.12.0'
+        implementation 'androidx.appcompat:appcompat:1.6.1'
+        implementation 'com.google.android.material:material:1.11.0'
+        implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+        implementation 'androidx.recyclerview:recyclerview:1.3.2'
+        implementation 'androidx.coordinatorlayout:coordinatorlayout:1.2.0'
+        ```
+
+        Wait for the sync to complete before proceeding.
+      </Step>
+      <Step title="Run on a device or generate an APK">
+        You have two options at this point:
+
+        **Run directly on a device or emulator:**
+        Connect an Android device via USB with USB debugging enabled, or start an AVD emulator, then press the green **Run** button (▶) in the toolbar. Android Studio will build and deploy the debug APK automatically.
+
+        **Generate a standalone APK file:**
+        Go to **Build → Build Bundle(s) / APK(s) → Build APK(s)**. Once the build finishes, a notification in the lower-right corner will show a **locate** link. Click it to open the folder containing `app-debug.apk`, which you can transfer to any Android 6.0+ device and install manually.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

@@ -1,0 +1,127 @@
+---
+title: "Interpreting Wi-Fi Statistics and Signal Analytics"
+sidebarTitle: "Statistics"
+description: "Learn how the Estadísticas tab breaks down signal quality tiers, channel usage distribution, and security protocol mix across all scanned 2.4 GHz networks."
+---
+
+The **Estadísticas** tab (tab index 3) hosts `StatisticsGraphView`, a custom `android.view.View` that renders three sequential analytical sections using Android's `Canvas` API. Each section draws from the current `scannedNetworks` list computed after the most recent scan, giving you an aggregate picture of your local RF environment — not just a flat list of APs, but a structured breakdown of quality, congestion, and security posture. The entire canvas is rendered inside a `ScrollView` to accommodate all three sections regardless of screen size.
+
+## Data Flow
+
+When the Statistics tab becomes active (or when a scan completes while it is already active), `updateStatisticsView()` iterates the `scannedNetworks` list and computes three data structures:
+
+```java
+int[]                     qualityCounts  = new int[4];   // [Excellent, Good, Regular, Weak]
+int[]                     channelCounts  = new int[14];  // Index 0 = ch 1 … Index 13 = ch 14
+Map<String, Integer>      securityCounts = new LinkedHashMap<>();
+```
+
+These are passed to `StatisticsGraphView.updateData()`, which stores them and calls `invalidate()` to trigger a full redraw.
+
+If `totalNetworks == 0`, the view skips all three sections and draws a single centred message:
+
+```
+No hay datos suficientes para estadísticas
+```
+
+## Section 1 — Signal Quality (Calidad de Señal)
+
+A horizontal bar chart with four rows, one per quality tier. Each bar's width is proportional to its count relative to the largest tier count (`maxQualityCount`).
+
+| Tier label | Threshold | Color token |
+|---|---|---|
+| Excelente | `signalPercent ≥ 85 %` | `sig_strong` (green) |
+| Buena | `signalPercent ≥ 60 %` | `sig_good` |
+| Regular | `signalPercent ≥ 35 %` | `sig_medium` (yellow/orange) |
+| Débil | `signalPercent < 35 %` | `sig_weak` (red) |
+
+The network count is rendered as a number to the right of each bar. A subtitle reads: *"Indica qué tan fuerte llega el Wi-Fi a tu dispositivo."*
+
+Classification logic in `updateStatisticsView()`:
+
+```java
+int percent = net.getSignalPercent();
+if      (percent >= 85) qCounts[0]++;  // Excelente
+else if (percent >= 60) qCounts[1]++;  // Buena
+else if (percent >= 35) qCounts[2]++;  // Regular
+else                    qCounts[3]++;  // Débil
+```
+
+## Section 2 — Channel Usage (Uso de Canales)
+
+A vertical histogram with **14 bars** — one for each 2.4 GHz channel (1–14). Bar height is proportional to the number of networks detected on that channel relative to `maxChannelCount`. The count is printed above each bar when it is greater than zero; the channel number is printed below.
+
+**Color coding:**
+
+| Channel | Color token | Reason |
+|---|---|---|
+| 1, 6, 11 | `sig_strong` (green) | Non-overlapping — preferred channels |
+| All others | `sig_good` | Overlapping — less preferred |
+
+```java
+if (i == 0 || i == 5 || i == 10) // array indices for ch 1, 6, 11
+    barPaint.setColor(colorExcellent);
+else
+    barPaint.setColor(colorGood);
+```
+
+The subtitle reads: *"Canales con menos redes tendrán menos interferencia."* Channel 14 is included in the array but will typically show zero networks outside Japan.
+
+## Section 3 — Security Types (Tipos de Seguridad)
+
+A horizontal bar chart with one row per distinct security label found across the scanned networks. Labels are derived from `ScannedNetwork.getSecurityLabel()` and the bar width is proportional to the count relative to the most common security type (`maxSecCount`). Each bar also shows the count and percentage of total networks (e.g. `5 (41.7%)`).
+
+**Color coding by security label:**
+
+| Label pattern | Color token | Meaning |
+|---|---|---|
+| Contains `"open"` (case-insensitive) | `sig_weak` (red) | Unencrypted — avoid |
+| Contains `"wpa3"` | `sig_strong` (green) | Modern — safest |
+| All other labels (WPA2, WPA, WEP, OWE…) | `#448AFF` (blue) | Standard |
+
+```java
+if (label.toLowerCase().contains("open")) {
+    barPaint.setColor(colorWeak);
+} else if (label.toLowerCase().contains("wpa3")) {
+    barPaint.setColor(colorExcellent);
+} else {
+    barPaint.setColor(Color.parseColor("#448AFF"));
+}
+```
+
+The subtitle reads: *"Nivel de protección. Evita conectarte a redes 'Abiertas'."*
+
+## Summary Header
+
+Before the three charts, the view renders a **"Resumen General"** header line:
+
+```
+Se encontraron N redes en tu área.
+```
+
+This gives immediate context about the sample size driving all three sections.
+
+## Complete Data-to-View Pipeline
+
+```
+scannedNetworks list
+        │
+        ▼
+updateStatisticsView()          ← called on scan complete or tab switch
+  ├─ qualityCounts[4]
+  ├─ channelCounts[14]
+  └─ securityCounts (Map)
+        │
+        ▼
+statsGraph.updateData(...)      ← StatisticsGraphView
+        │
+        ▼
+invalidate() → onDraw(Canvas)
+  ├─ Section 1: Calidad de Señal   (horizontal bars)
+  ├─ Section 2: Uso de Canales     (vertical histogram)
+  └─ Section 3: Tipos de Seguridad (horizontal bars)
+```
+
+<Tip>
+  If the Statistics tab is empty and shows **"No hay datos suficientes para estadísticas"**, it means no scan has been completed yet in the current session or the last scan returned zero networks in the 2410–2486 MHz range. Switch to any other tab, tap **Escanear**, wait for the scan to finish, then return to the Estadísticas tab — the three charts will populate immediately. If you are indoors or far from access points, try moving closer to a known router before scanning.
+</Tip>

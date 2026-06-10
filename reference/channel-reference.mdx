@@ -1,0 +1,100 @@
+---
+title: "2.4 GHz Wi-Fi Channel Reference for Spectrum App"
+sidebarTitle: "Channel Reference"
+description: "Complete reference of all 2.4 GHz Wi-Fi channels supported by Spectrum 2.4GHz, including frequencies, overlap rules, saturation scoring, and status labels."
+---
+
+The 2.4 GHz band is divided into up to 14 partially-overlapping channels, each separated by 5 MHz, but with a signal bandwidth of 20 MHz — meaning most channels bleed into their immediate neighbors. Spectrum 2.4GHz scans all channels in the band, displays which networks occupy each one, and scores each channel's saturation level so you can quickly identify the best channel for a new or relocated access point.
+
+## Channel Frequency Table
+
+Spectrum 2.4GHz builds its channel list in `MainActivity.buildAllChannels()` using the formula **`freq = 2407 + channel × 5`** for channels 1–13. Channels 1, 6, and 11 are flagged as `isPrime = true` — the three non-overlapping anchor channels recognised globally.
+
+| Channel | Frequency (MHz) | Non-Overlapping (Prime) | Region Label | Notes |
+|---------|-----------------|------------------------|--------------|-------|
+| 1 | 2412 | ✅ Yes | Universal | Widest global support |
+| 2 | 2417 | ❌ No | Universal | Overlaps ch 1 and ch 3 |
+| 3 | 2422 | ❌ No | Universal | Overlaps ch 1–5 |
+| 4 | 2427 | ❌ No | Universal | Overlaps ch 2–6 |
+| 5 | 2432 | ❌ No | Universal | Overlaps ch 3–7 |
+| 6 | 2437 | ✅ Yes | Universal | Non-overlapping with ch 1 and 11 |
+| 7 | 2442 | ❌ No | Universal | Overlaps ch 5–9 |
+| 8 | 2447 | ❌ No | Universal | Overlaps ch 6–10 |
+| 9 | 2452 | ❌ No | Universal | Overlaps ch 7–11 |
+| 10 | 2457 | ❌ No | Universal | Overlaps ch 8–12 |
+| 11 | 2462 | ✅ Yes | Universal | Non-overlapping with ch 1 and 6 |
+| 12 | 2467 | ❌ No | Universal | Restricted in North America (FCC) |
+| 13 | 2472 | ❌ No | Universal | Restricted in North America (FCC) |
+| **14** | **2484** | ❌ No | — | **Japan only — not built into channel list; recognized by `frecuenciaACanal()` only** |
+
+<Note>
+  Channel 14 operates at 2484 MHz and is legal only in Japan under ARIB STD-T66. Spectrum 2.4GHz can decode an incoming scan result on channel 14 via the `frecuenciaACanal()` lookup, but it does **not** create a `WifiChannel` entry for it in `buildAllChannels()`, so it will not appear in the Channels tab list.
+</Note>
+
+## Frequency Filter
+
+To guard against out-of-spec chipsets that report slightly off frequencies, the app only processes scan results whose reported frequency falls within a **±2 MHz margin** around the valid band:
+
+| Constant | Value | Meaning |
+|----------|-------|---------|
+| `FREQ_MIN` | 2410 MHz | Minimum accepted frequency (ch 1 − 2 MHz) |
+| `FREQ_MAX` | 2486 MHz | Maximum accepted frequency (ch 14 + 2 MHz) |
+
+Any `ScanResult` with a frequency outside `[2410, 2486]` MHz is silently discarded during `populateNetworks()`.
+
+## Channel Overlap Explained
+
+Each 2.4 GHz channel occupies a **20 MHz-wide slice of spectrum**, but channels are spaced only 5 MHz apart. This means a channel overlaps with all other channels within ±4 channel numbers. Two networks on overlapping channels cause **co-channel or adjacent-channel interference**, which degrades throughput and increases latency for both.
+
+The only three **non-overlapping** channels in the 2.4 GHz band are **1, 6, and 11**. They are spaced 25 MHz apart — just enough to avoid overlap at the −20 dBr bandwidth edges.
+
+```
+Channel:  1    2    3    4    5    6    7    8    9   10   11   12   13
+          |←────── 20 MHz ──────→|
+               |←────── 20 MHz ──────→|
+                    ...
+                              |←────── 20 MHz ──────→|
+```
+
+Placing access points on channels 1, 6, and 11 maximises spectral reuse in dense environments.
+
+## Region Notes
+
+All channels built by `buildAllChannels()` carry `regionLabel = "Universal"` and `isRestricted = false` within the app — the model layer does not enforce regional restrictions. However, be aware of real-world regulatory limits:
+
+- **North America (FCC):** Channels 1–11 are permitted; channels 12–13 are not authorized for use.
+- **Europe (ETSI):** Channels 1–13 are permitted.
+- **Japan (ARIB):** Channels 1–14 are permitted (channel 14 for legacy 802.11b only).
+
+Always comply with the regulations of your country when configuring an access point.
+
+## Saturation Scoring
+
+Each channel's saturation score reflects how congested that channel is based on the number of detected networks. The formula applied in `showChannelDetailsDialog()` is:
+
+```
+saturation (%) = min(networkCount × 25, 100)
+```
+
+| Networks Detected | Saturation Score |
+|-------------------|-----------------|
+| 0 | 0% |
+| 1 | 25% |
+| 2 | 50% |
+| 3 | 75% |
+| 4 or more | 100% (capped) |
+
+## Status Labels
+
+The saturation score maps to one of four human-readable status labels displayed in the channel details dialog:
+
+| Saturation | Status Label | Meaning |
+|------------|-------------|---------|
+| 0% | **Libre / Óptimo** | No competing networks; ideal choice |
+| 1 – 30% | **Bajo / Recomendado** | Light traffic; suitable for deployment |
+| 31 – 60% | **Medio / Estable** | Moderate congestion; still functional |
+| > 60% | **Crítico / Saturado** | Heavy congestion; expect interference |
+
+<Tip>
+  When setting up a new access point, always choose **channel 1, 6, or 11** — the three non-overlapping channels. Run a scan with Spectrum 2.4GHz, check each of these three channels' saturation score, and pick the one labeled **Libre / Óptimo** or **Bajo / Recomendado**. Avoid intermediate channels such as 3, 4, 8, or 9, which overlap with multiple prime channels simultaneously and worsen interference for everyone nearby.
+</Tip>

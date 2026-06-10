@@ -1,0 +1,128 @@
+---
+title: "Building Spectrum 2.4GHz Android App from Source"
+sidebarTitle: "Building"
+description: "Step-by-step guide to cloning, configuring, and compiling the Spectrum 2.4GHz Android app using Android Studio and Gradle."
+---
+
+Spectrum 2.4GHz is a standard Android project managed by Gradle. You can build it from source using Android Studio on any major operating system. The project targets API 34 (Android 14) while supporting devices running Android 6.0 (Marshmallow, API 23) and above, so both physical devices and modern AVD emulators work out of the box.
+
+## Prerequisites
+
+Before you begin, make sure the following tools are installed and configured on your machine:
+
+- **Android Studio** (latest stable release recommended — Hedgehog or newer)
+- **JDK 8 or higher** — Android Studio bundles its own JDK, but `JavaVersion.VERSION_1_8` is required for source and target compatibility
+- **Android SDK with API 34** installed via the SDK Manager (`Settings → SDK Manager → Android 14.0 (Tiramisu)`)
+- **USB debugging enabled** on your physical Android device, or an AVD configured with Android 6.0+ (API 23+)
+
+## Clone the Repository
+
+Open a terminal and run:
+
+```bash
+git clone https://github.com/anfegomezver/spectrum24ghz.git
+cd spectrum24ghz
+```
+
+## Build Process
+
+<Steps>
+  <Step title="Open the project in Android Studio">
+    Launch Android Studio, click **Open** from the Welcome screen (or **File → Open** if a project is already open), then navigate to and select the `spectrum24ghz` folder you just cloned. Android Studio will detect the Gradle build files automatically.
+  </Step>
+
+  <Step title="Wait for Gradle sync to complete">
+    Android Studio will begin syncing immediately. During sync, Gradle downloads all declared `androidx` dependencies — `core`, `appcompat`, `material`, `constraintlayout`, `recyclerview`, and `coordinatorlayout`. This may take a minute or two on the first run. A green checkmark in the Build panel indicates success.
+  </Step>
+
+  <Step title="Connect a device or start an emulator">
+    Connect a physical Android device via USB (ensure **USB Debugging** is turned on under `Settings → Developer Options`) or launch an AVD from the **Device Manager** panel. The app requires **Android 6.0 (API 23)** or higher.
+  </Step>
+
+  <Step title="Run the app">
+    Press the green **Run** button in the toolbar, or use the keyboard shortcut **Shift+F10** (Windows/Linux) / **Control+R** (macOS). Android Studio will compile the debug build and deploy it to the selected device.
+  </Step>
+
+  <Step title="Build a distributable APK">
+    To produce an APK file for distribution, go to **Build → Build Bundle(s)/APK(s) → Build APK(s)**. Gradle will assemble the release variant. When complete, a toast notification appears in the bottom-right corner with a **locate** link — click it to open the output directory. The APK will be at:
+
+    ```
+    app/build/outputs/apk/release/app-release-unsigned.apk
+    ```
+  </Step>
+</Steps>
+
+## Gradle Configuration
+
+The module-level `build.gradle` file defines all build settings for the app. Key values are shown below:
+
+| Property | Value |
+|---|---|
+| `namespace` | `com.spectrum24ghz` |
+| `applicationId` | `com.spectrum24ghz` |
+| `minSdk` | `23` (Android 6.0) |
+| `targetSdk` | `34` (Android 14) |
+| `compileSdk` | `34` |
+| `versionCode` | `1` |
+| `versionName` | `"1.0"` |
+| `sourceCompatibility` | `JavaVersion.VERSION_1_8` |
+| `targetCompatibility` | `JavaVersion.VERSION_1_8` |
+| `viewBinding` | `true` |
+
+```groovy
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.spectrum24ghz'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.spectrum24ghz"
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    buildFeatures {
+        viewBinding true
+    }
+}
+```
+
+## Dependencies
+
+The app relies exclusively on stable AndroidX and Material Components libraries:
+
+```groovy
+dependencies {
+    implementation 'androidx.core:core:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'androidx.coordinatorlayout:coordinatorlayout:1.2.0'
+
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
+}
+```
+
+<Note>
+  The release build type has `minifyEnabled false`, which means ProGuard and R8 code shrinking are **disabled**. The `proguard-rules.pro` file is referenced but has no effect in the current configuration. If you plan to publish the app to the Play Store, consider enabling minification and adding appropriate keep rules for the `com.spectrum24ghz.models` package.
+</Note>

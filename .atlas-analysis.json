@@ -1,0 +1,77 @@
+{
+  "projectType": "frontend",
+  "projectName": "Spectrum 2.4GHz",
+  "projectDescription": "An Android app that scans, maps, and visualizes all active Wi-Fi signals in the 2.4 GHz band across four real-time views: network list, channel map, time graph, and statistics.",
+  "theme": "palm",
+  "primaryColor": "#D32F2F",
+  "lightColor": "#FF6659",
+  "darkColor": "#9A0007",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "permissions"
+            ]
+          },
+          {
+            "group": "Using the App",
+            "pages": [
+              "usage/scanning",
+              "usage/network-list",
+              "usage/channel-map",
+              "usage/time-graph",
+              "usage/statistics"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/signal-quality",
+              "reference/channel-reference",
+              "reference/security-types",
+              "reference/requirements"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/building",
+              "development/architecture",
+              "development/contributing"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time Wi-Fi scanning of the 2.4 GHz band (channels 1–13, 2412–2472 MHz)",
+    "Network list view with SSID, BSSID, RSSI (dBm), signal percentage, channel, and security label",
+    "Channel map showing per-channel saturation level and all detected networks per channel",
+    "Time graph plotting RSSI history per BSSID across up to 20 scan cycles with sliding 10-point window",
+    "Statistics view with signal-quality distribution, channel usage histogram, and security-type breakdown",
+    "Automatic 5-second scan refresh on the Time Graph tab",
+    "30-second scan cooldown with graceful fallback to cached results",
+    "Runtime permission handling for ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, and NEARBY_WIFI_DEVICES (Android 13+)",
+    "Security classification: WPA3, WPA2, WPA, WEP, OWE, and Open detection from raw capabilities string",
+    "Prime channel highlighting for non-overlapping channels 1, 6, and 11"
+  ],
+  "publicApiSurface": [
+    "ScannedNetwork(ssid, bssid, rssi, signalPercent, frequency, channel, capabilities)",
+    "ScannedNetwork.getSecurityLabel() — derives WPA3/WPA2/WPA/WEP/OWE/Open label from capabilities",
+    "WifiChannel(channel, frequencyMhz, regionLabel, isRestricted, isPrime)",
+    "WifiChannel.getNetworks() — list of ScannedNetwork objects detected on this channel",
+    "NetworkAdapter(List<ScannedNetwork>, OnNetworkClickListener)",
+    "ChannelListAdapter(List<WifiChannel>, OnChannelClickListener)",
+    "TimeGraphView.updateHistory(List<List<ScannedNetwork>>)",
+    "StatisticsGraphView.updateData(int[] qualityCounts, int[] channelCounts, Map<String,Integer> securityCounts)",
+    "MainActivity.selectTab(int tabIndex) — 0=Networks, 1=Channels, 2=TimeGraph, 3=Statistics",
+    "SCAN_COOLDOWN_MS = 30 000 ms, SCAN_TIMEOUT_MS = 12 000 ms, FREQ_MIN = 2410 MHz, FREQ_MAX = 2486 MHz"
+  ]
+}

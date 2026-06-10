@@ -1,0 +1,72 @@
+---
+title: "Spectrum 2.4GHz – Real-Time Android Wi-Fi Spectrum Analyzer"
+sidebarTitle: "Introduction"
+description: "Spectrum 2.4GHz is an Android app that scans, visualizes, and analyzes Wi-Fi networks in the 2.4 GHz band across four interactive views."
+---
+
+Spectrum 2.4GHz is an Android application that gives you a live picture of every Wi-Fi network operating in the 2.4 GHz band around you. It continuously scans for access points, maps them onto the fourteen 2.4 GHz channels (2412 MHz – 2484 MHz), and presents the data through four complementary views: a sortable network list, a per-channel map, a rolling time graph, and an aggregate statistics dashboard. Whether you are troubleshooting interference, choosing the least-congested channel for a new access point, or studying how your wireless environment changes over time, Spectrum 2.4GHz gives you the raw signal data you need directly on your Android device — no root required.
+
+## What the App Does
+
+Spectrum 2.4GHz uses Android's `WifiManager` API to trigger active scans and collect `ScanResult` objects for every visible access point. Each result is enriched with a calculated signal percentage, a frequency-to-channel mapping (using the standard formula `channel = (frequency − 2407) / 5`, with channel 14 at 2484 MHz), and a parsed security label derived from the capabilities string. Results are sorted by signal strength so the strongest networks always appear first.
+
+The app keeps a rolling history of up to 20 consecutive scans. When you are on the **Time Graph** tab the auto-update handler triggers a new scan every 5 seconds, so you see signal levels evolve in near real-time. A 30-second cooldown prevents the OS from throttling scan requests; if a new scan is requested before the cooldown expires, the most recent cached results are shown instead.
+
+## Target Users
+
+- **Home and small-office users** who want to pick a channel with minimal overlap from neighbouring networks.
+- **Network administrators** performing a quick site survey before deploying new hardware.
+- **Students and educators** studying wireless networking and electromagnetic spectrum concepts in the 2.4 GHz ISM band.
+- **Developers** who need a reference implementation of Android Wi-Fi scanning with runtime permission handling.
+
+## Four Main Views
+
+<CardGroup cols={2}>
+  <Card
+    title="Network List"
+    icon="list"
+    href="usage/network-list"
+  >
+    A scrollable, signal-sorted list of every detected access point. Tap any network to see its BSSID, RSSI (dBm), signal percentage, frequency, channel, and full capabilities string.
+  </Card>
+  <Card
+    title="Channel Map"
+    icon="chart-bar"
+    href="usage/channel-map"
+  >
+    A per-channel breakdown of all 13 universal 2.4 GHz channels (plus channel 14). Each row shows the channel number, centre frequency, number of detected networks, and a saturation rating from Libre to Crítico.
+  </Card>
+  <Card
+    title="Time Graph"
+    icon="chart-line"
+    href="usage/time-graph"
+  >
+    A rolling signal-strength graph that plots RSSI history for each visible network across up to 20 consecutive scans. Auto-refreshes every 5 seconds while the tab is active.
+  </Card>
+  <Card
+    title="Statistics"
+    icon="chart-pie"
+    href="usage/statistics"
+  >
+    Aggregate charts that break down detected networks by signal quality (Excellent / Good / Fair / Poor), by channel usage, and by security type (WPA3, WPA2, WPA, WEP, Open).
+  </Card>
+</CardGroup>
+
+## Key Technical Facts
+
+| Property | Value |
+|---|---|
+| Minimum Android version | Android 6.0 Marshmallow (API 23) |
+| Target SDK | API 34 (Android 14) |
+| Compile SDK | API 34 |
+| Language | Java 8 (source & target compatibility `VERSION_1_8`) |
+| App ID | `com.spectrum24ghz` |
+| Version | 1.0 (`versionCode 1`, `versionName "1.0"`) |
+| Screen orientation | Portrait (fixed) |
+| View binding | Enabled (`viewBinding true`) |
+
+## Android Wi-Fi Scanning Restriction
+
+<Note>
+  Since Android 6.0 (API 23), the operating system **requires at least one location permission** before it will return Wi-Fi scan results to an application. This is an Android OS policy — Spectrum 2.4GHz cannot bypass it. On Android 13 and higher (API 33, Tiramisu) the additional `NEARBY_WIFI_DEVICES` permission is also required. See the [Permissions](permissions) page for a full explanation of what each permission is used for and how the app handles denial.
+</Note>

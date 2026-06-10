@@ -1,0 +1,74 @@
+---
+title: "Android Permissions Required for Wi-Fi Scanning"
+sidebarTitle: "Permissions"
+description: "Learn which Android permissions Spectrum 2.4GHz requests, why location access is mandatory for Wi-Fi scanning, and how the app handles permission denial."
+---
+
+Spectrum 2.4GHz needs a small set of Android permissions to scan for Wi-Fi networks and display signal data. Some of these — particularly the location permissions — may seem unexpected for a Wi-Fi app, but they are enforced by the Android operating system as a platform-level policy and cannot be bypassed by any third-party application. This page explains every permission declared in the app's `AndroidManifest.xml`, why it is needed, and what happens at runtime when one or more permissions are not granted.
+
+## Why Location Permission Is Required for Wi-Fi Scanning
+
+Since Android 6.0 (API 23), Google has required that any app calling `WifiManager.getScanResults()` or `WifiManager.startScan()` must hold at least one location permission at runtime. The rationale is that a list of visible Wi-Fi access points can be used to determine a user's physical location (via Wi-Fi positioning), so the OS treats scan results as location data and gates access accordingly. This restriction applies to **all** Android apps — it is not a decision made by Spectrum 2.4GHz.
+
+Without the required permissions, `WifiManager.getScanResults()` returns an empty list and the operating system silently discards it. The channel reference table inside the app remains fully usable, but no live scan data is available.
+
+## Declared Permissions
+
+The following six permissions are declared in `AndroidManifest.xml`:
+
+| Permission | Protection Level | Purpose |
+|---|---|---|
+| `ACCESS_WIFI_STATE` | Normal | Read the current Wi-Fi state, check whether Wi-Fi is enabled, and retrieve scan results from `WifiManager`. |
+| `CHANGE_WIFI_STATE` | Normal | Call `WifiManager.startScan()` to trigger an active scan for nearby access points. |
+| `ACCESS_NETWORK_STATE` | Normal | Check general network connectivity state. |
+| `ACCESS_COARSE_LOCATION` | Dangerous (runtime) | Required by Android since API 23 to return any Wi-Fi scan results. Provides approximate location accuracy. |
+| `ACCESS_FINE_LOCATION` | Dangerous (runtime) | Required for precise Wi-Fi scanning; supersedes coarse location when both are declared. |
+| `NEARBY_WIFI_DEVICES` | Dangerous (runtime) | Required on Android 13+ (API 33, Tiramisu) in addition to location permissions. Allows the app to discover nearby Wi-Fi devices without necessarily using location data. |
+
+### Normal vs. Dangerous Permissions
+
+`ACCESS_WIFI_STATE`, `CHANGE_WIFI_STATE`, and `ACCESS_NETWORK_STATE` are **normal** permissions — Android grants them automatically at install time and they do not require a runtime prompt. The remaining three — `ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION`, and `NEARBY_WIFI_DEVICES` — are **dangerous** permissions that must be explicitly approved by the user at runtime.
+
+## Android 13+ NEARBY_WIFI_DEVICES Requirement
+
+<Note>
+  On Android 13 (API 33, Tiramisu) and newer, Google introduced the `NEARBY_WIFI_DEVICES` permission as a more granular alternative to using location access purely for Wi-Fi discovery. Apps targeting API 33+ must request this permission **in addition to** the location permissions. Spectrum 2.4GHz declares it with `tools:targetApi="tiramisu"` so it is only requested at runtime on devices running Android 13 or higher — on earlier Android versions the permission is ignored.
+</Note>
+
+## Runtime Permission Flow
+
+Spectrum 2.4GHz requests permissions as early as possible — immediately when `MainActivity.onCreate()` is called — so that a scan can begin as soon as the user sees the app.
+
+<Steps>
+  <Step title="App checks which permissions are already granted">
+    On launch, `requestPermissionsAndScan()` iterates through the required permissions list. On Android 12 and below this is `ACCESS_FINE_LOCATION` and `ACCESS_COARSE_LOCATION`; on Android 13+ `NEARBY_WIFI_DEVICES` is added. Any permissions already granted by a previous session are skipped.
+  </Step>
+  <Step title="System permission dialog is shown for missing permissions">
+    If any permissions are missing, the app calls `ActivityResultLauncher.launch()` with the array of missing permissions. Android presents its standard system permission dialog — Spectrum 2.4GHz cannot customise the appearance of this dialog.
+  </Step>
+  <Step title="All permissions granted — scan begins">
+    If the user taps **Allow** (or **Allow all the time** for location), the `ActivityResultLauncher` callback receives a `Map<String, Boolean>` with all values `true`. The app immediately calls `startScanFlow()`, registers a `BroadcastReceiver` for `SCAN_RESULTS_AVAILABLE_ACTION`, and calls `WifiManager.startScan()`.
+  </Step>
+  <Step title="One or more permissions denied — dialog is shown">
+    If the user denies any permission, `showPermissionDeniedDialog()` is called. A dialog explains that without location permission the OS will not expose scan results, then offers two choices:
+
+    - **Retry** — launches the system permission dialog again so the user can reconsider.
+    - **Continue without scanning** — dismisses the dialog. The four-tab layout is still accessible; the Channel Map tab shows the static channel/frequency reference table, but the Network List, Time Graph, and Statistics tabs will have no live data.
+  </Step>
+</Steps>
+
+## Location Services Must Be Enabled System-Wide
+
+Holding the location permission in the app is a necessary but not sufficient condition for Wi-Fi scanning to work. Android also requires that **Location Services be turned on at the system level** (the master location toggle in **Settings → Location**). If Location Services are disabled, `WifiManager.getScanResults()` returns an empty list even when the app has all required permissions.
+
+If the app detects that Wi-Fi is off and `isScanAlwaysAvailable()` returns `false`, it shows a dialog offering to open **Settings → Wi-Fi** or **Settings → Location** so the user can resolve the issue.
+
+## "Scan Always Available" — Scanning Without Wi-Fi On
+
+<Tip>
+  Android has a hidden feature called **Scan Always Available** (also labelled **Wi-Fi scanning** in some firmware versions) that allows apps to scan for Wi-Fi networks even when Wi-Fi itself is turned off. You can find it at **Settings → Location → Advanced → Wi-Fi scanning** (exact path varies by manufacturer and Android version). When this is enabled, Spectrum 2.4GHz can detect networks and report signal levels even if your device's Wi-Fi connection is disabled, which is useful for a passive survey without disrupting an active connection.
+</Tip>
+
+## Privacy Summary
+
+Spectrum 2.4GHz uses location and Wi-Fi permissions solely to perform Wi-Fi spectrum analysis. It does not collect, store, or transmit any location data, network credentials, or personally identifiable information. All scan results are processed in-memory on the device and are discarded when the app process ends.

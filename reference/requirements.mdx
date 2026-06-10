@@ -1,0 +1,104 @@
+---
+title: "Device and System Requirements for Spectrum 2.4GHz"
+sidebarTitle: "Requirements"
+description: "Full system requirements, Android permissions, API-level behavior differences, and library dependencies needed to run the Spectrum 2.4GHz app."
+---
+
+Spectrum 2.4GHz is built for modern Android devices but maintains compatibility back to Android 6.0 (Marshmallow), covering the vast majority of active Android handsets. Before installing or distributing the app, verify that the target device meets the minimum OS and hardware requirements listed below, and ensure users understand which runtime permissions the app will request.
+
+## System Requirements
+
+| Requirement | Value |
+|-------------|-------|
+| **Operating System** | Android 6.0 (Marshmallow) or higher |
+| **Minimum SDK (minSdk)** | API Level 23 |
+| **Target SDK (targetSdk)** | API Level 34 (Android 14) |
+| **Compile SDK** | API Level 34 |
+| **Java Version** | Java 8 (source/target compatibility 1.8) |
+| **App Version Name** | 1.0 |
+| **App Version Code** | 1 |
+| **Package / Application ID** | `com.spectrum24ghz` |
+| **Hardware** | Device must have a 2.4 GHz capable Wi-Fi adapter |
+
+<Note>
+  Wi-Fi does **not** need to be connected — or even enabled — for the app to scan. Android's **"Scan Always Available"** mode (found under *Settings → Location → Advanced → Wi-Fi scanning*) allows the Wi-Fi radio to perform passive scans even while the Wi-Fi switch is off. Spectrum 2.4GHz checks `WifiManager.isScanAlwaysAvailable()` and will prompt the user to enable this setting if both Wi-Fi and scan-always are disabled.
+</Note>
+
+## Required Permissions
+
+The following permissions are declared in `AndroidManifest.xml`. The app requests only the permissions needed to perform Wi-Fi scanning and display location-gated results:
+
+| Permission | API Level | Purpose |
+|------------|-----------|---------|
+| `ACCESS_WIFI_STATE` | All | Read current Wi-Fi state and trigger `getScanResults()` |
+| `CHANGE_WIFI_STATE` | All | Call `WifiManager.startScan()` to initiate active scans |
+| `ACCESS_NETWORK_STATE` | All | Inspect general network connectivity state |
+| `ACCESS_COARSE_LOCATION` | All (23+) | Required by Android to expose Wi-Fi scan results |
+| `ACCESS_FINE_LOCATION` | All (23+) | Required for precise BSSID and SSID data in scan results |
+| `NEARBY_WIFI_DEVICES` | API 33+ (Android 13) | Replaces location permission for Wi-Fi scanning on Tiramisu and above |
+
+At runtime, `MainActivity.requiredPermissions()` builds the permission list dynamically — `NEARBY_WIFI_DEVICES` is only added on devices running Android 13 or higher:
+
+```java
+private List<String> requiredPermissions() {
+    List<String> perms = new ArrayList<>();
+    perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
+    perms.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        perms.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+    }
+    return perms;
+}
+```
+
+If any permission is denied, the app shows a dialog explaining the requirement and offers a retry option. The Channels tab remains accessible even without scan permissions, since it displays the pre-built static channel list.
+
+## Android Version Behavior Differences
+
+Spectrum 2.4GHz adjusts its behavior at two specific API-level boundaries:
+
+### Android 10+ (API Level 30)
+
+Signal strength is calculated using the device-reported maximum level via `WifiManager.getMaxSignalLevel()`, which accounts for vendor-specific signal granularity:
+
+```java
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    int max = wifiManager.getMaxSignalLevel();
+    return Math.max(0, Math.min(
+        WifiManager.calculateSignalLevel(rssi, max + 1) * 100 / max,
+        100
+    ));
+}
+// Fallback for API < 30:
+return WifiManager.calculateSignalLevel(rssi, 100);
+```
+
+### Android 13+ (API Level 33 — Tiramisu)
+
+Two changes apply on Tiramisu and above:
+
+1. **`NEARBY_WIFI_DEVICES` permission** is required in addition to (or instead of) location permissions for Wi-Fi scanning.
+2. **`RECEIVER_NOT_EXPORTED` flag** must be passed when registering the `BroadcastReceiver` for `SCAN_RESULTS_AVAILABLE_ACTION`, preventing other apps from sending forged scan-results broadcasts:
+
+```java
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    registerReceiver(scanReceiver, filter, RECEIVER_NOT_EXPORTED);
+} else {
+    registerReceiver(scanReceiver, filter);
+}
+```
+
+## Library Dependencies
+
+All dependencies are sourced from the standard AndroidX and Google Maven repositories. No third-party networking or analytics libraries are included.
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| `androidx.core:core` | 1.12.0 | Core AndroidX utilities and compatibility helpers |
+| `androidx.appcompat:appcompat` | 1.6.1 | Backward-compatible Activity and UI components |
+| `com.google.android.material:material` | 1.11.0 | Material Design components (dialogs, buttons, theming) |
+| `androidx.constraintlayout:constraintlayout` | 2.1.4 | Flexible constraint-based layout engine |
+| `androidx.recyclerview:recyclerview` | 1.3.2 | Efficient scrolling lists for network and channel views |
+| `androidx.coordinatorlayout:coordinatorlayout` | 1.2.0 | Coordinator layout for scroll-based behaviors |
+
+Build configuration uses **View Binding** (`buildFeatures { viewBinding true }`), eliminating `findViewById` calls throughout the codebase. Code minification is disabled in the `release` build type, so ProGuard rules are not applied by default.

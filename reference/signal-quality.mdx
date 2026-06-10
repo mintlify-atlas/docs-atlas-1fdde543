@@ -1,0 +1,110 @@
+---
+title: "Wi-Fi Signal Quality Levels in Spectrum 2.4GHz"
+sidebarTitle: "Signal Quality"
+description: "Learn how Spectrum 2.4GHz measures and classifies Wi-Fi signal strength from raw RSSI values into four quality tiers with color-coded visual indicators."
+---
+
+Spectrum 2.4GHz translates the raw RSSI value reported by Android's Wi-Fi subsystem into a human-readable percentage and then maps that percentage to one of four quality tiers — Excellent, Good, Fair, and Weak. Understanding these tiers helps you interpret scan results at a glance and make informed decisions about channel selection or router placement.
+
+## What Is RSSI?
+
+RSSI (Received Signal Strength Indicator) is the standard metric Android uses to express the power level of a received radio signal. Values are always **negative, measured in dBm (decibels relative to one milliwatt)**. The closer the value is to zero, the stronger the signal:
+
+- **−30 dBm** → very strong (practically on top of the router)
+- **−55 dBm** → excellent
+- **−70 dBm** → acceptable
+- **−85 dBm** → weak, borderline unusable
+- **−100 dBm** → no usable signal
+
+Because raw dBm values are unintuitive for everyday users, Spectrum 2.4GHz converts them to a 0–100% scale using Android's built-in `WifiManager.calculateSignalLevel()` API.
+
+## RSSI-to-Percentage Conversion
+
+The conversion logic in `MainActivity.calcSignalPercent()` adapts to the Android API level at runtime:
+
+**Android 10 and higher (API Level 30+)**
+
+```java
+int max = wifiManager.getMaxSignalLevel();
+return Math.max(0, Math.min(
+    WifiManager.calculateSignalLevel(rssi, max + 1) * 100 / max,
+    100
+));
+```
+
+`WifiManager.getMaxSignalLevel()` returns the device-specific maximum level (often 4). The result is scaled proportionally to produce a 0–100 integer.
+
+**Android 6–9 (API Level 23–29)**
+
+```java
+return WifiManager.calculateSignalLevel(rssi, 100);
+```
+
+On older APIs, `calculateSignalLevel` is called with 100 as the number of levels, which directly yields a 0–99 value that can be treated as a percentage.
+
+In both cases, the final value is clamped to the `[0, 100]` range before being stored on the `ScannedNetwork` object as `signalPercent`.
+
+## Quality Tiers
+
+Once the percentage is known, both `NetworkAdapter` and the Statistics view classify each network into one of four tiers:
+
+| Tier | Signal % | Approx. dBm | Display Label | Color Token |
+|------|----------|-------------|---------------|-------------|
+| **Excellent** | ≥ 85% | ≥ −55 dBm | Excelente | `sig_strong` (Green) |
+| **Good** | 60 – 84% | −55 to −70 dBm | Buena | `sig_good` (Yellow-Green) |
+| **Fair** | 35 – 59% | −70 to −80 dBm | Regular | `sig_medium` (Orange) |
+| **Weak** | < 35% | < −80 dBm | Débil | `sig_weak` (Red) |
+
+The thresholds are evaluated top-down in `NetworkAdapter.bind()`:
+
+```java
+if (percent >= 85) {
+    wifiIconRes = R.drawable.ic_wifi_4;
+    sigColorRes = R.color.sig_strong;
+} else if (percent >= 60) {
+    wifiIconRes = R.drawable.ic_wifi_3;
+    sigColorRes = R.color.sig_good;
+} else if (percent >= 35) {
+    wifiIconRes = R.drawable.ic_wifi_2;
+    sigColorRes = R.color.sig_medium;
+} else if (percent >= 15) {
+    wifiIconRes = R.drawable.ic_wifi_1;
+    sigColorRes = R.color.sig_medium;
+} else {
+    wifiIconRes = R.drawable.ic_wifi_0;
+    sigColorRes = R.color.sig_weak;
+}
+```
+
+The signal color is also applied to the dBm text label and the circular icon background (at ~10% opacity) to give every list row a consistent, at-a-glance quality indicator.
+
+## Wi-Fi Icon Mapping
+
+The app uses five discrete Wi-Fi icons that mirror the tier boundaries above, with a finer split at the low end:
+
+| Icon | Threshold | Description |
+|------|-----------|-------------|
+| `ic_wifi_4` | ≥ 85% | Full-strength — all four bars |
+| `ic_wifi_3` | ≥ 60% | Three bars |
+| `ic_wifi_2` | ≥ 35% | Two bars |
+| `ic_wifi_1` | ≥ 15% | One bar (very weak) |
+| `ic_wifi_0` | < 15% | No bars (essentially no signal) |
+
+Note that `ic_wifi_1` and `ic_wifi_2` both use the `sig_medium` (orange) color tint; the icon shape distinguishes between a marginal signal and a fair one within that color band.
+
+## Time Graph Rendering
+
+In the **Time Graph** tab, each network's trace is drawn with line properties derived from its signal strength at the moment of each scan. Stronger signals produce thicker, more opaque lines, making dominant networks visually prominent and weaker ones recede into the background. The graph retains up to the 20 most recent scans, and scans are triggered every 5 seconds while the Time Graph tab is active.
+
+## Practical Guidance
+
+| Tier | What It Means | Suggested Action |
+|------|---------------|------------------|
+| **Excellent (≥ 85%)** | Ideal for high-bandwidth use: 4K streaming, video calls, large file transfers | No action needed |
+| **Good (60–84%)** | Reliable for most everyday tasks; occasional brief slowdowns under load | Generally fine; monitor over time |
+| **Fair (35–59%)** | Usable for browsing and messaging, but latency and retransmissions increase | Consider moving closer to the router or eliminating obstructions |
+| **Weak (< 35%)** | Frequent packet loss, high latency; VoIP and streaming will suffer | Reposition the router, add a repeater, or change channels |
+
+<Tip>
+  Several physical and environmental factors influence RSSI independently of the router's transmit power: **distance** (signal degrades roughly as the square of distance in open space), **building materials** (concrete and brick attenuate more than drywall), **co-channel interference** from neighboring networks on the same channel, and **non-Wi-Fi sources** like microwave ovens and Bluetooth devices operating in the 2.4 GHz band.
+</Tip>

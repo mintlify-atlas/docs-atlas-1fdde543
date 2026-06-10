@@ -1,0 +1,110 @@
+---
+title: "Browsing and Inspecting the Network List"
+sidebarTitle: "Network List"
+description: "Explore how the Lista tab displays discovered 2.4 GHz networks, interprets signal strength, color-codes security, and surfaces per-network detail dialogs."
+---
+
+The **Lista** tab (tab index 0) is the primary view for surveying every 2.4 GHz access point within range. After a scan completes, the tab renders a `RecyclerView` powered by `NetworkAdapter`, with one card per `ScannedNetwork` object sorted in descending RSSI order — the strongest signal always appears first. Tapping any card opens a detailed dialog with the full set of low-level attributes for that network.
+
+## Network Card Layout
+
+Each card surfaces the most actionable information at a glance:
+
+- **SSID** — the human-readable network name. If the access point suppresses its SSID broadcast, the app displays `<oculto>` in its place.
+- **BSSID** — the MAC address of the access point radio.
+- **RSSI (dBm)** — the raw received signal strength, colored to match the signal tier (see table below).
+- **Signal percentage progress bar** — a visual 0–100% bar tinted with the same signal-tier color.
+- **Subtitle line** — formatted as `Canal X  ·  SecurityLabel  ·  Freq MHz`. When the channel cannot be resolved from the frequency, the channel segment reads `Desconocido`.
+- **Wi-Fi signal icon** — one of five icons reflecting the percentage tier.
+- **Lock icon** — a closed padlock (`ic_lock`) for secured networks; an open padlock (`ic_lock_open`) tinted `sig_weak` red for open networks.
+
+## Signal Strength Thresholds
+
+The `signalPercent` field drives both the icon selection and the color tint applied to the RSSI text, progress bar, and icon background.
+
+| Signal % Range | Icon | Color token | Meaning |
+|---|---|---|---|
+| ≥ 85 % | `ic_wifi_4` | `sig_strong` (green) | Excellent |
+| ≥ 60 % | `ic_wifi_3` | `sig_good` | Good |
+| ≥ 35 % | `ic_wifi_2` | `sig_medium` (yellow/orange) | Fair |
+| ≥ 15 % | `ic_wifi_1` | `sig_medium` (yellow/orange) | Weak |
+| < 15 % | `ic_wifi_0` | `sig_weak` (red) | Very weak |
+
+The icon background circle is tinted with the same signal color at ~10 % opacity (`0x1A` alpha), providing a subtle halo effect that reinforces the tier at a glance.
+
+## Network Detail Dialog
+
+Tapping a card calls `showNetworkDetailsDialog(ScannedNetwork net)`, which presents an `AlertDialog` with the following fields:
+
+| Field | Source | Notes |
+|---|---|---|
+| **BSSID (MAC)** | `net.getBssid()` | Hardware address of the radio |
+| **Señal (dBm)** | `net.getRssi()` + `net.getSignalPercent()` | Displayed as `–72 dBm (45%)` |
+| **Frecuencia** | `net.getFrequency()` | In MHz, e.g. `2437 MHz` |
+| **Canal** | `net.getChannel()` | `0` is shown as `"Desconocido"` |
+| **Seguridad** | `net.getSecurityLabel()` | Human-readable label |
+| **Detalles Capabilidades** | `net.getCapabilities()` | Raw Android capabilities string |
+
+## The `ScannedNetwork` Model
+
+`ScannedNetwork` is an immutable data class constructed once per scan result and reused across all tabs.
+
+```java
+public class ScannedNetwork {
+    private final String ssid;          // Network name ("<oculto>" if hidden)
+    private final String bssid;         // MAC address
+    private final int    rssi;          // Signal in dBm (negative integer)
+    private final int    signalPercent; // 0–100 computed by WifiManager.calculateSignalLevel()
+    private final int    frequency;     // MHz, e.g. 2437
+    private final int    channel;       // 1–14, or 0 if unresolvable
+    private final String capabilities;  // Raw Android capabilities string
+}
+```
+
+The `signalPercent` value is computed on Android 11+ using `WifiManager.calculateSignalLevel(rssi, max + 1) * 100 / max` (where `max = wifiManager.getMaxSignalLevel()`). On older versions, the legacy `WifiManager.calculateSignalLevel(rssi, 100)` is used.
+
+## `getSecurityLabel()` Logic
+
+The security label is derived entirely from the raw `capabilities` string (case-insensitive) using a priority-ordered check:
+
+```java
+public String getSecurityLabel() {
+    if (capabilities == null || capabilities.isEmpty()) return "Open";
+
+    String caps = capabilities.toUpperCase();
+
+    if (caps.contains("WPA3")) {
+        if (caps.contains("EAP")) return "WPA3-Ent (Enterprise)";
+        return "WPA3-SAE (Personal)";
+    }
+    if (caps.contains("WPA2")) {
+        if (caps.contains("EAP")) return "WPA2-EAP (Enterprise)";
+        if (caps.contains("PSK")) return "WPA2-PSK (Personal)";
+        return "WPA2";
+    }
+    if (caps.contains("WPA")) {
+        if (caps.contains("EAP")) return "WPA-EAP (Enterprise)";
+        if (caps.contains("PSK")) return "WPA-PSK (Personal)";
+        return "WPA";
+    }
+    if (caps.contains("WEP"))  return "WEP (Legacy)";
+    if (caps.contains("OWE"))  return "Enhanced Open (OWE)";
+    return "Open (No Security)";
+}
+```
+
+The check order matters: a capabilities string containing both `WPA3` and `WPA2` (transition mode APs) is classified under WPA3. WEP is only matched when no WPA variant is present. Networks with `OWE` (Opportunistic Wireless Encryption) are distinguished from truly open networks.
+
+## Security Label → Lock Icon Mapping
+
+The lock icon color is determined by a simple open/not-open test against the resolved label:
+
+```java
+boolean isOpen = secLabel.toLowerCase().contains("open");
+nb.ivLockIcon.setImageResource(isOpen ? R.drawable.ic_lock_open : R.drawable.ic_lock);
+nb.ivLockIcon.setColorFilter(
+    ContextCompat.getColor(context, isOpen ? R.color.sig_weak : R.color.text_secondary)
+);
+```
+
+Any label containing the word "open" — including `"Open"`, `"Open (No Security)"`, and `"Enhanced Open (OWE)"` — uses the red open-padlock. All other labels use the closed padlock in the secondary text color.

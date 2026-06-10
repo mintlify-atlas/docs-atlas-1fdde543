@@ -1,0 +1,117 @@
+---
+title: "Tracking Signal Strength Over Time with the Graph"
+sidebarTitle: "Time Graph"
+description: "Discover how the Tiempo tab plots per-network RSSI history on a live canvas graph, applies signal-based line styles, and auto-scans every 5 seconds."
+---
+
+The **Tiempo** tab (tab index 2) hosts `TimeGraphView`, a fully custom `android.view.View` that renders a live time-series graph using Android's `Canvas` API. Every time a Wi-Fi scan completes, the graph appends a new data point for each detected network and redraws itself, giving you a continuous picture of how signal strength fluctuates over time. This view is especially useful for diagnosing intermittent drops, identifying roaming events, and comparing the relative stability of nearby access points.
+
+## Axes and Grid
+
+The graph occupies the full view with fixed padding on all four sides.
+
+**Y-axis (signal strength)**
+- Range: **−100 dBm** (bottom) to **−20 dBm** (top).
+- Grid lines are drawn every **10 dBm** as dashed horizontal lines (`DashPathEffect[10, 10]`).
+- Each grid line is labelled in dBm on the left margin.
+
+**X-axis (scan index)**
+- Represents the **scan count index** — a monotonically increasing integer label per scan cycle.
+- Dashed vertical grid lines align with each scan point.
+- Displays a **sliding window of the last 10 scans** from the stored history, so the graph never becomes cluttered regardless of how many total scans have been collected.
+- The x-axis title reads **"Scan Count"**.
+
+## History Storage and Windowing
+
+```java
+// In MainActivity.handleScanResults()
+scanHistory.add(historyItem);
+if (scanHistory.size() > 20) {
+    scanHistory.remove(0);
+}
+```
+
+- Up to **20 scan cycles** are retained in `scanHistory`.
+- `TimeGraphView.updateHistory()` receives the full list and internally slices the **last 10 entries** as the visible window.
+- When the history contains fewer than 10 cycles, the x-axis still reserves space for 10 points to keep the scale stable.
+
+## Per-Network Line Rendering
+
+Each unique BSSID gets its own colored line. Colors are assigned in rotation from a palette of seven:
+
+| Index | Color | Hex |
+|---|---|---|
+| 0 | Cyan | `#00E5FF` |
+| 1 | Green | `#00E676` |
+| 2 | Yellow | `#FFC107` |
+| 3 | Purple | `#D500F9` |
+| 4 | Red | `#FF5252` |
+| 5 | Orange | `#FF9100` |
+| 6 | Blue | `#448AFF` |
+
+Colors wrap around via `index % colors.length` for environments with more than seven networks.
+
+### Signal-Based Line Style
+
+Line opacity and stroke width vary based on the **most recent RSSI** reading for each network:
+
+| RSSI Range | Alpha | Stroke Width | Interpretation |
+|---|---|---|---|
+| < −80 dBm | 70 / 255 (~27 %) | 2.5 px | Weak signal |
+| −80 to −60 dBm | 150 / 255 (~59 %) | 3.5 px | Medium signal |
+| ≥ −60 dBm | 255 / 255 (full) | 5.0 px | Strong signal |
+
+This means strong, nearby networks stand out with bold, fully-opaque lines while distant or marginal networks fade into the background.
+
+```java
+if (lastRssi < -80) {
+    linePaint.setColor(Color.argb(70,  r, g, b)); // Weak
+    linePaint.setStrokeWidth(2.5f);
+} else if (lastRssi < -60) {
+    linePaint.setColor(Color.argb(150, r, g, b)); // Medium
+    linePaint.setStrokeWidth(3.5f);
+} else {
+    linePaint.setColor(color);                     // Strong — full opacity
+    linePaint.setStrokeWidth(5.0f);
+}
+```
+
+Lines are drawn with `CornerPathEffect(25)` for rounded corners, giving them a smooth, organic appearance rather than sharp angular turns.
+
+## Legend Overlay
+
+A semi-transparent dark box (`#CC2E2E2E`) is rendered in the upper-left corner of the graph area. It shows up to **6 network labels** — each with a colored swatch matching its line color. Labels are truncated to 22 characters to fit within the fixed 320 px box width. Networks beyond the first 6 are drawn on the graph but omitted from the legend.
+
+## Organic RSSI Jitter
+
+If a network reports **exactly the same RSSI** as it did in the previous scan cycle, the app applies a small random variation:
+
+```java
+int sign = (Math.random() > 0.5) ? 1 : -1;
+int variation = (int)(Math.random() * 2) + 1; // 1 or 2 dBm
+level = result.level + (sign * variation);
+```
+
+This ±1–2 dBm jitter prevents perfectly flat horizontal lines in the graph — a visual artefact that can obscure real variation and make the chart look frozen. It is applied only when the incoming RSSI value is identical to the stored value for that BSSID.
+
+## Auto-Scan Behavior
+
+When the Tiempo tab is the active tab (`currentTab == 2`), the background `autoUpdateTask` `Runnable` fires every **5,000 ms** and calls `initiateWifiScan()` directly. This bypasses the 30-second cooldown used by the manual scan button, ensuring a continuous stream of data points while the graph is visible.
+
+```java
+private final Runnable autoUpdateTask = new Runnable() {
+    @Override
+    public void run() {
+        if (currentTab == 2) {
+            initiateWifiScan();  // Fires every 5 s while Time Graph tab is active
+        }
+        autoUpdateHandler.postDelayed(this, 5000L);
+    }
+};
+```
+
+Switching away from the Tiempo tab does not cancel the handler tick — it simply skips the `initiateWifiScan()` call — so no unnecessary scans are triggered from other tabs.
+
+<Note>
+  The graph updates live **only while the Time Graph tab is active**. Switching to another tab suspends auto-scanning. When you return to the Tiempo tab, `timeGraph.updateHistory(scanHistory)` is called immediately in `selectTab()` to re-render the graph with whatever data has been accumulated, and auto-scanning resumes on the next 5-second tick.
+</Note>

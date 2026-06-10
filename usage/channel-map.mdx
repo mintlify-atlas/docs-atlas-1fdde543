@@ -1,0 +1,136 @@
+---
+title: "Reading the 2.4 GHz Channel Map View"
+sidebarTitle: "Channel Map"
+description: "Understand how the Canales tab displays all 13 channels, calculates saturation, color-codes congestion, and recommends the best channels for new access points."
+---
+
+The **Canales** tab (tab index 1) gives you a bird's-eye view of how 2.4 GHz spectrum is being consumed across every channel in the band. Rather than showing individual networks, it groups all discovered access points by their channel and visualises congestion as a saturation percentage. This makes it easy to spot crowded channels and identify clear frequencies before deploying a new access point or changing an existing one's channel.
+
+## Channel List Construction
+
+The full list of 13 channels is built once at startup in `buildAllChannels()` and never destroyed — only the `networks` list inside each `WifiChannel` is cleared and repopulated after every scan.
+
+```java
+private List<WifiChannel> buildAllChannels() {
+    List<WifiChannel> list = new ArrayList<>();
+    for (int ch = 1; ch <= 13; ch++) {
+        int freq = 2407 + ch * 5;
+        list.add(new WifiChannel(ch, freq, "Universal", false, ch == 1 || ch == 6 || ch == 11));
+    }
+    return list;
+}
+```
+
+Channels 1, 6, and 11 are instantiated with `isPrime = true`. These are the three non-overlapping channels in the 2.4 GHz band — they do not interfere with each other when used at standard 20 MHz width, making them the universally recommended choices for wireless deployments.
+
+## Channel Frequency Reference
+
+Each channel's centre frequency is fixed by the formula `2407 + channel × 5` MHz:
+
+| Channel | Frequency (MHz) | isPrime |
+|---|---|---|
+| 1 | 2412 | ✓ |
+| 2 | 2417 | |
+| 3 | 2422 | |
+| 4 | 2427 | |
+| 5 | 2432 | |
+| 6 | 2437 | ✓ |
+| 7 | 2442 | |
+| 8 | 2447 | |
+| 9 | 2452 | |
+| 10 | 2457 | |
+| 11 | 2462 | ✓ |
+| 12 | 2467 | |
+| 13 | 2472 | |
+
+Channel 14 (2484 MHz) is handled by the frequency-to-channel conversion function but is **not** included in `buildAllChannels()` — it is only legal in Japan and extremely rare in practice.
+
+## Channel Card Layout
+
+The `ChannelListAdapter` binds each `WifiChannel` to a card showing:
+
+- **Channel number badge** — a colored circular badge (tinted to match saturation level).
+- **"Canal N"** — channel label.
+- **Frequency in MHz** — e.g. `2437 MHz`.
+- **Network count** — `"Sin redes"` (0), `"1 red"` (1), or `"N redes"` (2+).
+- **Saturation percentage** — e.g. `Saturación: 50%`, colored by tier.
+
+## Saturation Formula
+
+Saturation is calculated with a simple linear scale capped at 100 %:
+
+```java
+int saturation = Math.min(count * 25, 100);
+```
+
+| Networks on channel | Saturation |
+|---|---|
+| 0 | 0 % |
+| 1 | 25 % |
+| 2 | 50 % |
+| 3 | 75 % |
+| 4 or more | 100 % |
+
+## Saturation Color Coding
+
+The saturation percentage determines the color of both the channel badge and the saturation label text:
+
+| Saturation Range | Color Token | Meaning |
+|---|---|---|
+| 0 % | `sig_strong` (green) | Empty — ideal |
+| 1 %–30 % | `sig_strong` (green) | Low — recommended |
+| 31 %–60 % | `sig_medium` (yellow/orange) | Moderate — stable |
+| > 60 % | `sig_weak` (red) | High — congested |
+
+```java
+if (saturation == 0 || saturation <= 30) {
+    satColorRes = R.color.sig_strong;
+} else if (saturation <= 60) {
+    satColorRes = R.color.sig_medium;
+} else {
+    satColorRes = R.color.sig_weak;
+}
+```
+
+## Channel Detail Dialog
+
+Tapping any channel card calls `showChannelDetailsDialog(WifiChannel ch)`, which opens an `AlertDialog` containing:
+
+| Field | Content |
+|---|---|
+| **Frecuencia** | Centre frequency in MHz |
+| **Saturación** | Percentage value and status label |
+| **Redes Detectadas** | Total network count on this channel |
+| **Listado de Redes** | Each SSID with its RSSI in dBm |
+
+Networks are listed in descending RSSI order (strongest first), matching the same ordering applied in `populateNetworks()`.
+
+### Status Labels
+
+The status label shown inside the detail dialog is derived from the same saturation thresholds used for color coding:
+
+| Saturation | Status label |
+|---|---|
+| 0 % | `Libre / Óptimo` |
+| 1 %–30 % | `Bajo / Recomendado` |
+| 31 %–60 % | `Medio / Estable` |
+| > 60 % | `Crítico / Saturado` |
+
+## The `WifiChannel` Model
+
+```java
+public class WifiChannel {
+    private final int    channel;       // 1–13
+    private final int    frequencyMhz;  // Centre frequency, e.g. 2437
+    private final String regionLabel;   // Always "Universal" for ch 1–13
+    private final boolean isRestricted; // Always false for ch 1–13
+    private final boolean isPrime;      // true for ch 1, 6, 11
+    private final List<ScannedNetwork> networks; // Populated after each scan
+}
+```
+
+The `networks` list is cleared at the start of every scan and re-populated by `populateNetworks()`, which assigns each `ScannedNetwork` to the `WifiChannel` whose `channel` number matches the result of `frecuenciaACanal(frequency)`.
+
+<Tip>
+  For a new access point or router, always select **channel 1, 6, or 11**. These three non-overlapping channels are the only ones in the 2.4 GHz band that do not interfere with each other at standard 20 MHz width. Choosing any other channel means your AP will partially overlap with neighbouring channels on both sides, increasing co-channel interference. Look for the channel showing `Libre / Óptimo` or `Bajo / Recomendado` in green.
+</Tip>
